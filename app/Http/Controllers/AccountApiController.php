@@ -3,22 +3,12 @@
 use Auth;
 use Utils;
 use Response;
-use Input;
-use Validator;
 use Cache;
-use App\Models\Client;
 use App\Models\Account;
-use App\Models\AccountToken;
 use App\Ninja\Repositories\AccountRepository;
 use Illuminate\Http\Request;
-use League\Fractal;
-use League\Fractal\Manager;
-use App\Ninja\Serializers\ArraySerializer;
 use App\Ninja\Transformers\AccountTransformer;
 use App\Ninja\Transformers\UserAccountTransformer;
-use App\Http\Controllers\BaseAPIController;
-use Swagger\Annotations as SWG;
-
 use App\Events\UserSignedUp;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\UpdateAccountRequest;
@@ -34,14 +24,22 @@ class AccountApiController extends BaseAPIController
         $this->accountRepo = $accountRepo;
     }
 
+    public function ping()
+    {
+        $headers = Utils::getApiHeaders();
+
+        return Response::make(RESULT_SUCCESS, 200, $headers);
+    }
+
     public function register(RegisterRequest $request)
     {
-        $account = $this->accountRepo->create($request->first_name, $request->last_name, $request->email, $request->password);        
+
+        $account = $this->accountRepo->create($request->first_name, $request->last_name, $request->email, $request->password);
         $user = $account->users()->first();
-        
+
         Auth::login($user, true);
         event(new UserSignedUp());
-        
+
         return $this->processLogin($request);
     }
 
@@ -73,26 +71,8 @@ class AccountApiController extends BaseAPIController
         $account = Auth::user()->account;
         $updatedAt = $request->updated_at ? date('Y-m-d H:i:s', $request->updated_at) : false;
 
-        $map = [
-            'users' => [],
-            'clients' => ['contacts'],
-            'invoices' => ['invoice_items', 'user', 'client', 'payments'],
-            'products' => [],
-            'tax_rates' => [],
-            'expenses' => ['client', 'invoice', 'vendor'],
-            'payments' => ['invoice'],
-        ];
-
-        foreach ($map as $key => $values) {
-            $account->load([$key => function($query) use ($values, $updatedAt) {
-                $query->withTrashed()->with($values);
-                if ($updatedAt) {
-                    $query->where('updated_at', '>=', $updatedAt);
-                }
-            }]);
-        }
-
         $transformer = new AccountTransformer(null, $request->serializer);
+        $account->load($transformer->getDefaultIncludes());
         $account = $this->createItem($account, $transformer, 'account');
 
         return $this->response($account);
@@ -191,8 +171,6 @@ class AccountApiController extends BaseAPIController
                     'notify_approved' => $request->notify_approved,
                     'notify_paid' => $request->notify_paid,
                 ];
-
-                //unset($devices[$x]);
 
                 $devices[$x] = $newDevice;
                 $account->devices = json_encode($devices);

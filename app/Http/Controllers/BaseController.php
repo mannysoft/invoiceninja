@@ -1,10 +1,14 @@
 <?php namespace App\Http\Controllers;
 
+use Utils;
 use Illuminate\Foundation\Bus\DispatchesJobs;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class BaseController extends Controller
 {
-    use DispatchesJobs;
+    use DispatchesJobs, AuthorizesRequests;
+
+    protected $entityType;
 
     /**
      * Setup the layout used by the controller.
@@ -18,10 +22,19 @@ class BaseController extends Controller
         }
     }
 
-    /*
-    public function __construct()
+    protected function returnBulk($entityType, $action, $ids)
     {
-        $this->beforeFilter('csrf', array('on' => array('post', 'delete', 'put')));
+        $isDatatable = filter_var(request()->datatable, FILTER_VALIDATE_BOOLEAN);
+        $entityTypes = Utils::pluralizeEntityType($entityType);
+
+        if ($action == 'restore' && count($ids) == 1) {
+            return redirect("{$entityTypes}/" . $ids[0]);
+        } elseif ($isDatatable || ($action == 'archive' || $action == 'delete')) {
+            return redirect("{$entityTypes}");
+        } elseif (count($ids)) {
+            return redirect("{$entityTypes}/" . $ids[0]);
+        } else {
+            return redirect("{$entityTypes}");
+        }
     }
-    */
 }

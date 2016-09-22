@@ -1,16 +1,18 @@
 <?php namespace App\Providers;
 
-use Session;
 use Auth;
 use Utils;
-use HTML;
 use Form;
 use URL;
 use Request;
 use Validator;
 use Illuminate\Support\ServiceProvider;
 
-class AppServiceProvider extends ServiceProvider {
+/**
+ * Class AppServiceProvider
+ */
+class AppServiceProvider extends ServiceProvider
+{
 
 	/**
 	 * Bootstrap any application services.
@@ -19,14 +21,23 @@ class AppServiceProvider extends ServiceProvider {
 	 */
 	public function boot()
 	{
-        Form::macro('image_data', function($imagePath) {
-            return 'data:image/jpeg;base64,' . base64_encode(file_get_contents($imagePath));
+        Form::macro('image_data', function($image, $contents = false) {
+            if(!$contents){
+                $contents = file_get_contents($image);
+            }
+            else{
+                $contents = $image;
+            }
+
+            return 'data:image/jpeg;base64,' . base64_encode($contents);
         });
 
-        Form::macro('nav_link', function($url, $text, $url2 = '', $extra = '') {
-            $class = ( Request::is($url) || Request::is($url.'/*') || Request::is($url2.'/*') ) ? ' class="active"' : '';
-            $title = ucwords(trans("texts.$text")) . Utils::getProLabel($text);
-            return '<li'.$class.'><a href="'.URL::to($url).'" '.$extra.'>'.$title.'</a></li>';
+        Form::macro('nav_link', function($url, $text) {
+            //$class = ( Request::is($url) || Request::is($url.'/*') || Request::is($url2.'/*') ) ? ' class="active"' : '';
+            $class = ( Request::is($url) || Request::is($url.'/*') ) ? ' class="active"' : '';
+            $title = trans("texts.$text")  . Utils::getProLabel($text);
+
+            return '<li'.$class.'><a href="'.URL::to($url).'">'.$title.'</a></li>';
         });
 
         Form::macro('tab_link', function($url, $text, $active = false) {
@@ -40,34 +51,9 @@ class AppServiceProvider extends ServiceProvider {
             $Types = ucfirst($types);
             $class = ( Request::is($types) || Request::is('*'.$type.'*')) && !Request::is('*settings*') ? ' active' : '';
 
-            $str = '<li class="dropdown '.$class.'">
-                   <a href="'.URL::to($types).'" class="dropdown-toggle">'.trans("texts.$types").'</a>
-                   <ul class="dropdown-menu" id="menu1">
-                   <li><a href="'.URL::to($types.'/create').'">'.trans("texts.new_$type").'</a></li>';
-            
-            if ($type == ENTITY_INVOICE) {
-                $str .= '<li class="divider"></li>
-                         <li><a href="'.URL::to('recurring_invoices').'">'.trans("texts.recurring_invoices").'</a></li>
-                         <li><a href="'.URL::to('recurring_invoices/create').'">'.trans("texts.new_recurring_invoice").'</a></li>';
-                if (Auth::user()->isPro()) {
-                    $str .= '<li class="divider"></li>
-                            <li><a href="'.URL::to('quotes').'">'.trans("texts.quotes").'</a></li>
-                            <li><a href="'.URL::to('quotes/create').'">'.trans("texts.new_quote").'</a></li>';
-                }
-            } else if ($type == ENTITY_CLIENT) {
-                $str .= '<li class="divider"></li>
-                        <li><a href="'.URL::to('credits').'">'.trans("texts.credits").'</a></li>
-                        <li><a href="'.URL::to('credits/create').'">'.trans("texts.new_credit").'</a></li>';
-            } else if ($type == ENTITY_EXPENSE) {
-				$str .= '<li class="divider"></li>
-                        <li><a href="'.URL::to('vendors').'">'.trans("texts.vendors").'</a></li>
-                        <li><a href="'.URL::to('vendors/create').'">'.trans("texts.new_vendor").'</a></li>';
-			}
-
-            $str .= '</ul>
-                  </li>';
-
-            return $str;
+            return '<li class="dropdown '.$class.'">
+                    <a href="'.URL::to($types).'" class="dropdown-toggle">'.trans("texts.$types").'</a>
+                   </li>';
         });
 
         Form::macro('flatButton', function($label, $color) {
@@ -136,7 +122,14 @@ class AppServiceProvider extends ServiceProvider {
 
             return $str . '</ol>';
         });
-        
+
+        Form::macro('human_filesize', function($bytes, $decimals = 1) {
+            $size = ['B','kB','MB','GB','TB','PB','EB','ZB','YB'];
+            $factor = floor((strlen($bytes) - 1) / 3);
+            if($factor == 0)$decimals=0;// There aren't fractional bytes
+            return sprintf("%.{$decimals}f", $bytes / pow(1024, $factor)) . ' ' . @$size[$factor];
+        });
+
         Validator::extend('positive', function($attribute, $value, $parameters) {
             return Utils::parseFloat($value) >= 0;
         });
@@ -170,14 +163,6 @@ class AppServiceProvider extends ServiceProvider {
                 $lastTime = max($lastTime, $endTime);
             }
             return true;
-        });
-
-        Validator::extend('less_than', function($attribute, $value, $parameters) {
-            return floatval($value) <= floatval($parameters[0]);
-        });
-
-        Validator::replacer('less_than', function($message, $attribute, $rule, $parameters) {
-            return str_replace(':value', $parameters[0], $message);
         });
 
         Validator::extend('has_counter', function($attribute, $value, $parameters) {

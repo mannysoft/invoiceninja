@@ -2,10 +2,8 @@
 
 use DB;
 use Cache;
-use App\Ninja\Repositories\BaseRepository;
 use App\Models\Client;
 use App\Models\Contact;
-use App\Models\Activity;
 use App\Events\ClientWasCreated;
 use App\Events\ClientWasUpdated;
 
@@ -25,7 +23,7 @@ class ClientRepository extends BaseRepository
                 ->get();
     }
 
-    public function find($filter = null)
+    public function find($filter = null, $userId = false)
     {
         $query = DB::table('clients')
                     ->join('accounts', 'accounts.id', '=', 'clients.account_id')
@@ -46,7 +44,8 @@ class ClientRepository extends BaseRepository
                         'clients.work_phone',
                         'contacts.email',
                         'clients.deleted_at',
-                        'clients.is_deleted'
+                        'clients.is_deleted',
+                        'clients.user_id'
                     );
 
         if (!\Session::get('show_trash:client')) {
@@ -62,14 +61,20 @@ class ClientRepository extends BaseRepository
             });
         }
 
+        if ($userId) {
+            $query->where('clients.user_id', '=', $userId);
+        }
+
         return $query;
     }
-    
-    public function save($data)
+
+    public function save($data, $client = null)
     {
         $publicId = isset($data['public_id']) ? $data['public_id'] : false;
 
-        if (!$publicId || $publicId == '-1') {
+        if ($client) {
+           // do nothing
+        } elseif (!$publicId || $publicId == '-1') {
             $client = Client::createNew();
         } else {
             $client = Client::scope($publicId)->with('contacts')->firstOrFail();
@@ -94,10 +99,15 @@ class ClientRepository extends BaseRepository
             return $client;
         }
         */
-        
+
         $first = true;
         $contacts = isset($data['contact']) ? [$data['contact']] : $data['contacts'];
         $contactIds = [];
+
+        // If the primary is set ensure it's listed first
+        usort($contacts, function ($left, $right) {
+            return (isset($right['is_primary']) ? $right['is_primary'] : 1) - (isset($left['is_primary']) ? $left['is_primary'] : 0);
+        });
 
         foreach ($contacts as $contact) {
             $contact = $client->addContact($contact, $first);
@@ -105,9 +115,11 @@ class ClientRepository extends BaseRepository
             $first = false;
         }
 
-        foreach ($client->contacts as $contact) {
-            if (!in_array($contact->public_id, $contactIds)) {
-                $contact->delete();
+        if ( ! $client->wasRecentlyCreated) {
+            foreach ($client->contacts as $contact) {
+                if (!in_array($contact->public_id, $contactIds)) {
+                    $contact->delete();
+                }
             }
         }
 
@@ -119,4 +131,48 @@ class ClientRepository extends BaseRepository
 
         return $client;
     }
+
+    public function findPhonetically($clientName)
+    {
+        $clientNameMeta = metaphone($clientName);
+
+        $map = [];
+        $max = SIMILAR_MIN_THRESHOLD;
+        $clientId = 0;
+
+        $clients = Client::scope()->get(['id', 'name', 'public_id']);
+
+        foreach ($clients as $client) {
+            $map[$client->id] = $client;
+
+            if ( ! $client->name) {
+                continue;
+            }
+
+            $similar = similar_text($clientNameMeta, metaphone($client->name), $percent);
+
+            if ($percent > $max) {
+                $clientId = $client->id;
+                $max = $percent;
+            }
+        }
+
+        $contacts = Contact::scope()->get(['client_id', 'first_name', 'last_name', 'public_id']);
+
+        foreach ($contacts as $contact) {
+            if ( ! $contact->getFullName() || ! isset($map[$contact->client_id])) {
+                continue;
+            }
+
+            $similar = similar_text($clientNameMeta, metaphone($contact->getFullName()), $percent);
+
+            if ($percent > $max) {
+                $clientId = $contact->client_id;
+                $max = $percent;
+            }
+        }
+
+        return ($clientId && isset($map[$clientId])) ? $map[$clientId] : null;
+    }
+
 }

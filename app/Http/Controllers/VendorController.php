@@ -1,35 +1,26 @@
 <?php namespace App\Http\Controllers;
 
 use Auth;
-use Datatable;
 use Utils;
 use View;
 use URL;
-use Validator;
 use Input;
 use Session;
 use Redirect;
 use Cache;
-
-use App\Models\Activity;
 use App\Models\Vendor;
 use App\Models\Account;
-use App\Models\VendorContact;
-use App\Models\Size;
-use App\Models\PaymentTerm;
-use App\Models\Industry;
-use App\Models\Currency;
-use App\Models\Country;
 use App\Ninja\Repositories\VendorRepository;
 use App\Services\VendorService;
-
+use App\Http\Requests\VendorRequest;
 use App\Http\Requests\CreateVendorRequest;
 use App\Http\Requests\UpdateVendorRequest;
-// vendor
+
 class VendorController extends BaseController
 {
     protected $vendorService;
     protected $vendorRepo;
+    protected $entityType = ENTITY_VENDOR;
 
     public function __construct(VendorRepository $vendorRepo, VendorService $vendorService)
     {
@@ -37,8 +28,6 @@ class VendorController extends BaseController
 
         $this->vendorRepo = $vendorRepo;
         $this->vendorService = $vendorService;
-
-
     }
 
     /**
@@ -48,7 +37,7 @@ class VendorController extends BaseController
      */
     public function index()
     {
-        return View::make('list', array(
+        return View::make('list', [
             'entityType' => 'vendor',
             'title' => trans('texts.vendors'),
             'sortCol' => '4',
@@ -61,7 +50,7 @@ class VendorController extends BaseController
               'date_created',
               ''
             ]),
-        ));
+        ]);
     }
 
     public function getDatatable()
@@ -89,16 +78,15 @@ class VendorController extends BaseController
      * @param  int      $id
      * @return Response
      */
-    public function show($publicId)
+    public function show(VendorRequest $request)
     {
-        $vendor = Vendor::withTrashed()->scope($publicId)->with('vendorcontacts', 'size', 'industry')->firstOrFail();
-        Utils::trackViewed($vendor->getDisplayName(), 'vendor');
+        $vendor = $request->entity();
 
         $actionLinks = [
-            ['label' => trans('texts.new_vendor'), 'url' => '/vendors/create/' . $vendor->public_id]
+            ['label' => trans('texts.new_vendor'), 'url' => URL::to('/vendors/create/' . $vendor->public_id)]
         ];
 
-        $data = array(
+        $data = [
             'actionLinks'           => $actionLinks,
             'showBreadcrumbs'       => false,
             'vendor'                => $vendor,
@@ -107,7 +95,7 @@ class VendorController extends BaseController
             'hasRecurringInvoices'  => false,
             'hasQuotes'             => false,
             'hasTasks'          => false,
-        );
+        ];
 
         return View::make('vendors.show', $data);
     }
@@ -117,10 +105,10 @@ class VendorController extends BaseController
      *
      * @return Response
      */
-    public function create()
+    public function create(VendorRequest $request)
     {
         if (Vendor::scope()->count() > Auth::user()->getMaxNumVendors()) {
-            return View::make('error', ['hideHeader' => true, 'error' => "Sorry, you've exceeded the limit of ".Auth::user()->getMaxNumVendors()." vendors"]);
+            return View::make('error', ['hideHeader' => true, 'error' => "Sorry, you've exceeded the limit of ".Auth::user()->getMaxNumVendors().' vendors']);
         }
 
         $data = [
@@ -141,21 +129,22 @@ class VendorController extends BaseController
      * @param  int      $id
      * @return Response
      */
-    public function edit($publicId)
+    public function edit(VendorRequest $request)
     {
-        $vendor = Vendor::scope($publicId)->with('vendorcontacts')->firstOrFail();
+        $vendor = $request->entity();
+
         $data = [
             'vendor' => $vendor,
             'method' => 'PUT',
-            'url' => 'vendors/'.$publicId,
+            'url' => 'vendors/'.$vendor->public_id,
             'title' => trans('texts.edit_vendor'),
         ];
 
         $data = array_merge($data, self::getViewModel());
 
         if (Auth::user()->account->isNinjaAccount()) {
-            if ($account = Account::whereId($vendor->public_id)->first()) {
-                $data['proPlanPaid'] = $account['pro_plan_paid'];
+            if ($account = Account::whereId($client->public_id)->first()) {
+                $data['planDetails'] = $account->getPlanDetails(false, false);
             }
         }
 
@@ -180,7 +169,7 @@ class VendorController extends BaseController
      */
     public function update(UpdateVendorRequest $request)
     {
-        $vendor = $this->vendorService->save($request->input());
+        $vendor = $this->vendorService->save($request->input(), $request->entity());
 
         Session::flash('message', trans('texts.updated_vendor'));
 
@@ -196,10 +185,6 @@ class VendorController extends BaseController
         $message = Utils::pluralize($action.'d_vendor', $count);
         Session::flash('message', $message);
 
-        if ($action == 'restore' && $count == 1) {
-            return Redirect::to('vendors/' . Utils::getFirst($ids));
-        } else {
-            return Redirect::to('vendors');
-        }
+        return $this->returnBulk($this->entityType, $action, $ids);
     }
 }

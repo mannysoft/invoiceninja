@@ -1,9 +1,9 @@
 @extends('master')
 
-@section('head')	
+@section('head')
 
-<link href="{{ asset('css/bootstrap.min.css') }}" rel="stylesheet" type="text/css"/> 
-<link href="{{ asset('css/style.css') }}" rel="stylesheet" type="text/css"/>    
+<link href="{{ asset('css/bootstrap.min.css') }}" rel="stylesheet" type="text/css"/>
+<link href="{{ asset('css/style.min.css') }}" rel="stylesheet" type="text/css"/>    
 
 <style type="text/css">
     body {
@@ -18,7 +18,7 @@
         margin:0;
     }
     .modal-header img {
-        float: left; 
+        float: left;
         margin-right: 20px;
     }
     .form-signin {
@@ -53,7 +53,7 @@
 @section('body')
 <div class="container">
 
-{!! Former::open('forgot')->rules(['email' => 'required|email'])->addClass('form-signin') !!}
+{!! Former::open('recover_password')->rules(['email' => 'required|email'])->addClass('form-signin') !!}
   <div class="modal-header">
     <img src="{{ asset('images/icon-login.png') }}" />
     <h4>Invoice Ninja | {{ trans('texts.password_recovery') }}</h4></div>
@@ -99,7 +99,7 @@
 
 <script type="text/javascript">
     $(function() {
-        $('#email').focus();            
+        $('#email').focus();
     })
 </script>
 
