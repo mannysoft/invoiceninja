@@ -14,7 +14,7 @@
           }
         </style>
 
-        <script src="https://maps.googleapis.com/maps/api/js"></script>
+        <script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}"></script>
     @endif
 @stop
 
@@ -109,7 +109,7 @@
 
 		<div class="col-md-3">
 			<h3>{{ trans('texts.contacts') }}</h3>
-		  	@foreach ($vendor->vendorcontacts as $contact)
+		  	@foreach ($vendor->vendor_contacts as $contact)
                 @if ($contact->first_name || $contact->last_name)
                     <b>{{ $contact->first_name.' '.$contact->last_name }}</b><br/>
                 @endif
@@ -142,7 +142,7 @@
     @endif
 
 	<ul class="nav nav-tabs nav-justified">
-		{!! HTML::tab_link('#expenses', trans('texts.expenses')) !!}
+		{!! Form::tab_link('#expenses', trans('texts.expenses')) !!}
 	</ul>
 
 	<div class="tab-content">
@@ -152,7 +152,7 @@
 								trans('texts.expense_date'),
 								trans('texts.amount'),
 								trans('texts.public_notes'))
-				->setUrl(url('api/expenseVendor/' . $vendor->public_id))
+				->setUrl(url('api/vendor_expense/' . $vendor->public_id))
                 ->setCustomValues('entityType', 'expenses')
 				->setOptions('sPaginationType', 'bootstrap')
 				->setOptions('bFilter', false)
@@ -174,22 +174,8 @@
 			window.location = '{{ URL::to('expenses/create/' . $vendor->public_id ) }}';
 		});
 
-        // load datatable data when tab is shown and remember last tab selected
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-          var target = $(e.target).attr("href") // activated tab
-          target = target.substring(1);
-          localStorage.setItem('vendor_tab', target);
-          if (!loadedTabs.hasOwnProperty(target)) {
-            loadedTabs[target] = true;
-            window['load_' + target]();
-          }
-        });
-        var tab = localStorage.getItem('vendor_tab');
-        if (tab && tab != 'activity') {
-            $('.nav-tabs a[href="#' + tab.replace('#', '') + '"]').tab('show');
-        } else {
-            //window['load_activity']();
-        }
+        $('.nav-tabs a[href="#expenses"]').tab('show');
+        load_expenses();
 	});
 
 	function onArchiveClick() {

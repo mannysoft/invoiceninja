@@ -128,12 +128,12 @@
     
     var arc = d3.svg.arc()
       .innerRadius(function(d) { return d.r })
-      .outerRadius(function(d) { return d.r - 5 })
+      .outerRadius(function(d) { return d.r - 8 })
       .startAngle(0);
 
     var fullArc = d3.svg.arc()
-      .innerRadius(function(d) { return d.r  })
-      .outerRadius(function(d) { return d.r - 5 })
+      .innerRadius(function(d) { return d.r - 1 })
+      .outerRadius(function(d) { return d.r - 7 })
       .startAngle(0)
       .endAngle(2 * Math.PI);
 
@@ -244,7 +244,7 @@
         .transition()
         .duration(1000)      
         .style("fill", function(d, i) { 
-          return d.displayAge == -1 ? 'white' : 'red';
+          return 'red';
         });                
 
       selection.exit().remove();
@@ -268,7 +268,7 @@
         return -1;
       }
       var dayInSeconds = 1000*60*60*24;
-      @if (Auth::user()->account->isPro())
+      @if (Auth::user()->account->hasFeature(FEATURE_REPORTS))
         var date = convertToJsDate(invoice.created_at);
       @else
         var date = new Date().getTime() - (dayInSeconds * Math.random() * 100);

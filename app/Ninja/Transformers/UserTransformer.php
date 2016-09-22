@@ -2,7 +2,6 @@
 
 use App\Models\Account;
 use App\Models\User;
-use League\Fractal;
 
 class UserTransformer extends EntityTransformer
 {
@@ -21,7 +20,13 @@ class UserTransformer extends EntityTransformer
             'registered' => (bool) $user->registered,
             'confirmed' => (bool) $user->confirmed,
             'oauth_user_id' => $user->oauth_user_id,
-            'oauth_provider_id' => $user->oauth_provider_id
+            'oauth_provider_id' => $user->oauth_provider_id,
+            'notify_sent' => (bool) $user->notify_sent,
+            'notify_viewed' => (bool) $user->notify_viewed,
+            'notify_paid' => (bool) $user->notify_paid,
+            'notify_approved' => (bool) $user->notify_approved,
+            'is_admin' => (bool) $user->is_admin,
+            'permissions' => (int) $user->getOriginal('permissions'),
         ];
     }
 }

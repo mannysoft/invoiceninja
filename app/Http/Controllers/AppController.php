@@ -11,10 +11,8 @@ use Utils;
 use View;
 use Event;
 use Session;
-use Cookie;
 use Response;
 use Redirect;
-use App\Models\User;
 use App\Models\Account;
 use App\Models\Industry;
 use App\Ninja\Mailers\Mailer;
@@ -30,7 +28,7 @@ class AppController extends BaseController
 
     public function __construct(AccountRepository $accountRepo, Mailer $mailer, EmailService $emailService)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->accountRepo = $accountRepo;
         $this->mailer = $mailer;
@@ -78,43 +76,58 @@ class AppController extends BaseController
         } elseif (!$valid) {
             return Redirect::to('/setup')->withInput();
         }
-        
+
         if (Utils::isDatabaseSetup() && Account::count() > 0) {
             return Redirect::to('/');
         }
 
-        $config = "APP_ENV=production\n".
-                    "APP_DEBUG={$app['debug']}\n".
-                    "APP_URL={$app['url']}\n".
-                    "APP_KEY={$app['key']}\n\n".
-                    "DB_TYPE={$dbType}\n".
-                    "DB_HOST={$database['type']['host']}\n".
-                    "DB_DATABASE={$database['type']['database']}\n".
-                    "DB_USERNAME={$database['type']['username']}\n".
-                    "DB_PASSWORD={$database['type']['password']}\n\n".
-                    "MAIL_DRIVER={$mail['driver']}\n".
-                    "MAIL_PORT={$mail['port']}\n".
-                    "MAIL_ENCRYPTION={$mail['encryption']}\n".
-                    "MAIL_HOST={$mail['host']}\n".
-                    "MAIL_USERNAME={$mail['username']}\n".
-                    "MAIL_FROM_NAME={$mail['from']['name']}\n".
-                    "MAIL_PASSWORD={$mail['password']}\n\n".
-                    "PHANTOMJS_CLOUD_KEY='a-demo-key-with-low-quota-per-ip-address'";
+        $_ENV['APP_ENV'] = 'production';
+        $_ENV['APP_DEBUG'] = $app['debug'];
+        $_ENV['APP_URL'] = $app['url'];
+        $_ENV['APP_KEY'] = $app['key'];
+        $_ENV['APP_CIPHER'] = env('APP_CIPHER', 'AES-256-CBC');
+        $_ENV['DB_TYPE'] = $dbType;
+        $_ENV['DB_HOST'] = $database['type']['host'];
+        $_ENV['DB_DATABASE'] = $database['type']['database'];
+        $_ENV['DB_USERNAME'] = $database['type']['username'];
+        $_ENV['DB_PASSWORD'] = $database['type']['password'];
+        $_ENV['MAIL_DRIVER'] = $mail['driver'];
+        $_ENV['MAIL_PORT'] = $mail['port'];
+        $_ENV['MAIL_ENCRYPTION'] = $mail['encryption'];
+        $_ENV['MAIL_HOST'] = $mail['host'];
+        $_ENV['MAIL_USERNAME'] = $mail['username'];
+        $_ENV['MAIL_FROM_NAME'] = $mail['from']['name'];
+        $_ENV['MAIL_PASSWORD'] = $mail['password'];
+        $_ENV['PHANTOMJS_CLOUD_KEY'] = 'a-demo-key-with-low-quota-per-ip-address';
+        $_ENV['MAILGUN_DOMAIN'] = $mail['mailgun_domain'];
+        $_ENV['MAILGUN_SECRET'] = $mail['mailgun_secret'];
+
+        $config = '';
+        foreach ($_ENV as $key => $val) {
+            if (is_array($val)) {
+                continue;
+            }
+            if (preg_match('/\s/', $val)) {
+                $val = "'{$val}'";
+            }
+            $config .= "{$key}={$val}\n";
+        }
+
 
         // Write Config Settings
-        $fp = fopen(base_path()."/.env", 'w');
+        $fp = fopen(base_path().'/.env', 'w');
         fwrite($fp, $config);
         fclose($fp);
 
         // == DB Migrate & Seed == //
         // Artisan::call('migrate:rollback', array('--force' => true)); // Debug Purposes
-        Artisan::call('migrate', array('--force' => true));
+        Artisan::call('migrate', ['--force' => true]);
         if (Industry::count() == 0) {
-            Artisan::call('db:seed', array('--force' => true));
+            Artisan::call('db:seed', ['--force' => true]);
         }
         Cache::flush();
-        Artisan::call('optimize', array('--force' => true));
-        
+        Artisan::call('optimize', ['--force' => true]);
+
         $firstName = trim(Input::get('first_name'));
         $lastName = trim(Input::get('last_name'));
         $email = trim(strtolower(Input::get('email')));
@@ -135,7 +148,7 @@ class AppController extends BaseController
             return Redirect::to('/');
         }
 
-        if ( ! $canUpdateEnv = @fopen(base_path()."/.env", 'w')) {
+        if ( ! $canUpdateEnv = @fopen(base_path().'/.env', 'w')) {
             Session::flash('error', 'Warning: Permission denied to write to .env config file, try running <code>sudo chown www-data:www-data /path/to/ninja/.env</code>');
             return Redirect::to('/settings/system_settings');
         }
@@ -152,7 +165,7 @@ class AppController extends BaseController
         $_ENV['DB_DATABASE'] = $db['type']['database'];
         $_ENV['DB_USERNAME'] = $db['type']['username'];
         $_ENV['DB_PASSWORD'] = $db['type']['password'];
-        
+
         if ($mail) {
             $_ENV['MAIL_DRIVER'] = $mail['driver'];
             $_ENV['MAIL_PORT'] = $mail['port'];
@@ -162,14 +175,22 @@ class AppController extends BaseController
             $_ENV['MAIL_FROM_NAME'] = $mail['from']['name'];
             $_ENV['MAIL_PASSWORD'] = $mail['password'];
             $_ENV['MAIL_FROM_ADDRESS'] = $mail['username'];
+            $_ENV['MAILGUN_DOMAIN'] = $mail['mailgun_domain'];
+            $_ENV['MAILGUN_SECRET'] = $mail['mailgun_secret'];
         }
 
         $config = '';
         foreach ($_ENV as $key => $val) {
+            if (is_array($val)) {
+                continue;
+            }
+            if (preg_match('/\s/', $val)) {
+                    $val = "'{$val}'";
+            }
             $config .= "{$key}={$val}\n";
         }
 
-        $fp = fopen(base_path()."/.env", 'w');
+        $fp = fopen(base_path().'/.env', 'w');
         fwrite($fp, $config);
         fclose($fp);
 
@@ -184,7 +205,7 @@ class AppController extends BaseController
         foreach ($database['connections'][$dbType] as $key => $val) {
             Config::set("database.connections.{$dbType}.{$key}", $val);
         }
-        
+
         try {
             DB::reconnect();
             $valid = DB::connection()->getDatabaseName() ? true : false;
@@ -206,7 +227,7 @@ class AppController extends BaseController
 
         Config::set('mail.from.address', $email);
         Config::set('mail.from.name', $fromName);
-        
+
         $data = [
             'text' => 'Test email',
         ];
@@ -225,13 +246,14 @@ class AppController extends BaseController
         if (!Utils::isNinjaProd() && !Utils::isDatabaseSetup()) {
             try {
                 set_time_limit(60 * 5); // shouldn't take this long but just in case
-                Artisan::call('migrate', array('--force' => true));
+                Artisan::call('migrate', ['--force' => true]);
                 if (Industry::count() == 0) {
-                    Artisan::call('db:seed', array('--force' => true));
+                    Artisan::call('db:seed', ['--force' => true]);
                 }
-                Artisan::call('optimize', array('--force' => true));
+                Artisan::call('optimize', ['--force' => true]);
             } catch (Exception $e) {
-                Response::make($e->getMessage(), 500);
+                Utils::logError($e);
+                return Response::make($e->getMessage(), 500);
             }
         }
 
@@ -243,22 +265,34 @@ class AppController extends BaseController
         if (!Utils::isNinjaProd()) {
             try {
                 set_time_limit(60 * 5);
+                Artisan::call('clear-compiled');
+                Artisan::call('cache:clear');
+                Artisan::call('debugbar:clear');
+                Artisan::call('route:clear');
+                Artisan::call('view:clear');
+                Artisan::call('config:clear');
+                Artisan::call('optimize', ['--force' => true]);
                 Cache::flush();
                 Session::flush();
-                Artisan::call('migrate', array('--force' => true));
-                foreach ([
-                    'PaymentLibraries',
-                    'Fonts',
-                    'Banks',
-                    'InvoiceStatus'
-                ] as $seeder) {
-                    Artisan::call('db:seed', array('--force' => true, '--class' => "{$seeder}Seeder"));
-                }
-                Artisan::call('optimize', array('--force' => true));
+                Artisan::call('migrate', ['--force' => true]);
+                Artisan::call('db:seed', ['--force' => true, '--class' => 'UpdateSeeder']);
                 Event::fire(new UserSettingsChanged());
-                Session::flash('message', trans('texts.processed_updates'));
+
+                // legacy fix: check cipher is in .env file
+                if ( ! env('APP_CIPHER')) {
+                    $fp = fopen(base_path().'/.env', 'a');
+                    fwrite($fp, "\nAPP_CIPHER=rijndael-128");
+                    fclose($fp);
+                }
+
+                // show message with link to Trello board
+                $message = trans('texts.see_whats_new', ['version' => NINJA_VERSION]);
+                $message = link_to(RELEASES_URL, $message, ['target' => '_blank']);
+                $message = sprintf('%s - %s', trans('texts.processed_updates'), $message);
+                Session::flash('warning', $message);
             } catch (Exception $e) {
-                Response::make($e->getMessage(), 500);
+                Utils::logError($e);
+                return Response::make($e->getMessage(), 500);
             }
         }
 
@@ -276,19 +310,19 @@ class AppController extends BaseController
     {
         $messageId = Input::get('MessageID');
         return $this->emailService->markOpened($messageId) ? RESULT_SUCCESS : RESULT_FAILURE;
-        
+
         return RESULT_SUCCESS;
     }
 
     public function stats()
     {
-        if (Input::get('password') != env('RESELLER_PASSWORD')) {
+        if ( ! hash_equals(Input::get('password'), env('RESELLER_PASSWORD'))) {
             sleep(3);
             return '';
         }
 
         if (Utils::getResllerType() == RESELLER_REVENUE_SHARE) {
-            $payments = DB::table('accounts')
+            $data = DB::table('accounts')
                             ->leftJoin('payments', 'payments.account_id', '=', 'accounts.id')
                             ->leftJoin('clients', 'clients.id', '=', 'payments.client_id')
                             ->where('accounts.account_key', '=', NINJA_ACCOUNT_KEY)
@@ -300,15 +334,9 @@ class AppController extends BaseController
                                 'payments.amount'
                             ]);
         } else {
-            $payments = DB::table('accounts')
-                            ->leftJoin('payments', 'payments.account_id', '=', 'accounts.id')
-                            ->leftJoin('clients', 'clients.id', '=', 'payments.client_id')
-                            ->where('accounts.account_key', '=', NINJA_ACCOUNT_KEY)
-                            ->where('payments.is_deleted', '=', false)
-                            ->groupBy('clients.id')
-                            ->count();
+            $data = DB::table('users')->count();
         }
 
-        return json_encode($payments);
+        return json_encode($data);
     }
 }

@@ -3,17 +3,30 @@
 use Utils;
 use App\Ninja\Repositories\InvoiceRepository;
 
+/**
+ * Class RecurringInvoiceController
+ */
 class RecurringInvoiceController extends BaseController
 {
+    /**
+     * @var InvoiceRepository
+     */
     protected $invoiceRepo;
 
+    /**
+     * RecurringInvoiceController constructor.
+     * @param InvoiceRepository $invoiceRepo
+     */
     public function __construct(InvoiceRepository $invoiceRepo)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->invoiceRepo = $invoiceRepo;
     }
 
+    /**
+     * @return mixed
+     */
     public function index()
     {
         $data = [
@@ -29,7 +42,7 @@ class RecurringInvoiceController extends BaseController
                 'action'
             ])
         ];
-        
+
         return response()->view('list', $data);
     }
 

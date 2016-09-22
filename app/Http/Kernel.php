@@ -17,8 +17,11 @@ class Kernel extends HttpKernel {
 		'Illuminate\View\Middleware\ShareErrorsFromSession',
 		'App\Http\Middleware\VerifyCsrfToken',
         'App\Http\Middleware\DuplicateSubmissionCheck',
+		'App\Http\Middleware\QueryLogging',
+        'App\Http\Middleware\SessionDataCheckMiddleware',
         'App\Http\Middleware\StartupCheck',
 	];
+
 
 	/**
 	 * The application's route middleware.
@@ -28,6 +31,7 @@ class Kernel extends HttpKernel {
 	protected $routeMiddleware = [
 		'auth' => 'App\Http\Middleware\Authenticate',
 		'auth.basic' => 'Illuminate\Auth\Middleware\AuthenticateWithBasicAuth',
+		'permissions.required' => 'App\Http\Middleware\PermissionsRequired',
 		'guest' => 'App\Http\Middleware\RedirectIfAuthenticated',
         'api' => 'App\Http\Middleware\ApiCheck',
 	];

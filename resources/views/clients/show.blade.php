@@ -14,7 +14,7 @@
           }
         </style>
 
-        <script src="https://maps.googleapis.com/maps/api/js"></script>
+        <script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}"></script>
     @endif
 @stop
 
@@ -39,12 +39,17 @@
                 </div>
 
                 @if ($gatewayLink)
-                    {!! Button::normal(trans('texts.view_in_stripe'))->asLinkTo($gatewayLink)->withAttributes(['target' => '_blank']) !!}
+                    {!! Button::normal(trans('texts.view_in_gateway', ['gateway'=>$gatewayName]))
+                            ->asLinkTo($gatewayLink)
+                            ->withAttributes(['target' => '_blank']) !!}
                 @endif
 
                 @if ($client->trashed())
-                    {!! Button::primary(trans('texts.restore_client'))->withAttributes(['onclick' => 'onRestoreClick()']) !!}
+                    @can('edit', $client)
+                        {!! Button::primary(trans('texts.restore_client'))->withAttributes(['onclick' => 'onRestoreClick()']) !!}
+                    @endcan
                 @else
+                    @can('edit', $client)
                     {!! DropdownButton::normal(trans('texts.edit_client'))
                         ->withAttributes(['class'=>'normalDropDown'])
                         ->withContents([
@@ -52,10 +57,12 @@
                           ['label' => trans('texts.delete_client'), 'url' => "javascript:onDeleteClick()"],
                         ]
                       )->split() !!}
-
-                    {!! DropdownButton::primary(trans('texts.new_invoice'))
-                            ->withAttributes(['class'=>'primaryDropDown'])
-                            ->withContents($actionLinks)->split() !!}
+                    @endcan
+                    @can('create', ENTITY_INVOICE)
+                        {!! DropdownButton::primary(trans('texts.new_invoice'))
+                                ->withAttributes(['class'=>'primaryDropDown'])
+                                ->withContents($actionLinks)->split() !!}
+                    @endcan
                 @endif
               {!! Former::close() !!}
 
@@ -110,13 +117,13 @@
             @if ($client->private_notes)
                 <p><i>{{ $client->private_notes }}</i></p>
             @endif
-		  	
+
   	        @if ($client->client_industry)
                 {{ $client->client_industry->name }}<br/>
             @endif
             @if ($client->client_size)
                 {{ $client->client_size->name }}<br/>
-            @endif            
+            @endif
 
 		  	@if ($client->website)
 		  	   <p>{!! Utils::formatWebsite($client->website) !!}</p>
@@ -140,7 +147,10 @@
                 @endif
                 @if ($contact->phone)
                     <i class="fa fa-phone" style="width: 20px"></i>{{ $contact->phone }}<br/>
-                @endif		  		
+                @endif
+                @if (Auth::user()->confirmed && $client->account->enable_client_portal)
+                    <i class="fa fa-dashboard" style="width: 20px"></i><a href="{{ $contact->link }}" target="_blank">{{ trans('texts.view_client_portal') }}</a><br/>
+                @endif
 		  	@endforeach
 		</div>
 
@@ -174,16 +184,16 @@
     @endif
 
 	<ul class="nav nav-tabs nav-justified">
-		{!! HTML::tab_link('#activity', trans('texts.activity'), true) !!}
+		{!! Form::tab_link('#activity', trans('texts.activity'), true) !!}
         @if ($hasTasks)
-            {!! HTML::tab_link('#tasks', trans('texts.tasks')) !!}
+            {!! Form::tab_link('#tasks', trans('texts.tasks')) !!}
         @endif
 		@if ($hasQuotes && Utils::isPro())
-			{!! HTML::tab_link('#quotes', trans('texts.quotes')) !!}
+			{!! Form::tab_link('#quotes', trans('texts.quotes')) !!}
 		@endif
-		{!! HTML::tab_link('#invoices', trans('texts.invoices')) !!}
-		{!! HTML::tab_link('#payments', trans('texts.payments')) !!}
-		{!! HTML::tab_link('#credits', trans('texts.credits')) !!}
+		{!! Form::tab_link('#invoices', trans('texts.invoices')) !!}
+		{!! Form::tab_link('#payments', trans('texts.payments')) !!}
+		{!! Form::tab_link('#credits', trans('texts.credits')) !!}
 	</ul>
 
 	<div class="tab-content">
@@ -225,7 +235,7 @@
     @endif
 
 
-    @if (Utils::isPro() && $hasQuotes)
+    @if (Utils::hasFeature(FEATURE_QUOTES) && $hasQuotes)
         <div class="tab-pane" id="quotes">
 
 			{!! Datatable::table()
@@ -285,8 +295,10 @@
 			    			trans('texts.invoice'),
 			    			trans('texts.transaction_reference'),
 			    			trans('texts.method'),
+                            trans('texts.source'),
 			    			trans('texts.payment_amount'),
-			    			trans('texts.payment_date'))
+			    			trans('texts.payment_date'),
+                            trans('texts.status'))
 				->setUrl(url('api/payments/' . $client->public_id))
                 ->setCustomValues('entityType', 'payments')
 				->setOptions('sPaginationType', 'bootstrap')
@@ -358,10 +370,10 @@
 	}
 
 	function onDeleteClick() {
-		if (confirm("{!! trans('texts.are_you_sure') !!}")) {
+		sweetConfirm(function() {
 			$('#action').val('delete');
 			$('.mainForm').submit();
-		}
+		});
 	}
 
     @if ($client->hasAddress())
@@ -375,14 +387,14 @@
 
             var map = new google.maps.Map(mapCanvas, mapOptions)
             var address = "{{ "{$client->address1} {$client->address2} {$client->city} {$client->state} {$client->postal_code} " . ($client->country ? $client->country->name : '') }}";
-            
+
             geocoder = new google.maps.Geocoder();
             geocoder.geocode( { 'address': address}, function(results, status) {
                 if (status == google.maps.GeocoderStatus.OK) {
                   if (status != google.maps.GeocoderStatus.ZERO_RESULTS) {
                     var result = results[0];
                     map.setCenter(result.geometry.location);
-                    
+
                     var infowindow = new google.maps.InfoWindow(
                         { content: '<b>'+result.formatted_address+'</b>',
                         size: new google.maps.Size(150, 50)
@@ -390,9 +402,9 @@
 
                     var marker = new google.maps.Marker({
                         position: result.geometry.location,
-                        map: map, 
+                        map: map,
                         title:address,
-                    }); 
+                    });
                     google.maps.event.addListener(marker, 'click', function() {
                         infowindow.open(map, marker);
                     });

@@ -6,26 +6,20 @@ use Redirect;
 use Utils;
 use View;
 use Cache;
-use Event;
 use Session;
 use App\Models\Account;
 use App\Models\Client;
 use App\Models\Country;
-use App\Models\Currency;
-use App\Models\Industry;
 use App\Models\InvoiceDesign;
-use App\Models\PaymentTerm;
 use App\Models\Product;
-use App\Models\Size;
 use App\Models\TaxRate;
 use App\Models\Invitation;
-use App\Models\Activity;
 use App\Models\Invoice;
 use App\Ninja\Mailers\ContactMailer as Mailer;
 use App\Ninja\Repositories\InvoiceRepository;
 use App\Ninja\Repositories\ClientRepository;
-use App\Events\QuoteInvitationWasApproved;
 use App\Services\InvoiceService;
+use App\Http\Requests\InvoiceRequest;
 
 class QuoteController extends BaseController
 {
@@ -33,10 +27,11 @@ class QuoteController extends BaseController
     protected $invoiceRepo;
     protected $clientRepo;
     protected $invoiceService;
+    protected $entityType = ENTITY_INVOICE;
 
     public function __construct(Mailer $mailer, InvoiceRepository $invoiceRepo, ClientRepository $clientRepo, InvoiceService $invoiceService)
     {
-        parent::__construct();
+        // parent::__construct();
 
         $this->mailer = $mailer;
         $this->invoiceRepo = $invoiceRepo;
@@ -46,13 +41,10 @@ class QuoteController extends BaseController
 
     public function index()
     {
-        if (!Utils::isPro()) {
-            return Redirect::to('/invoices/create');
-        }
-
         $data = [
           'title' => trans('texts.quotes'),
           'entityType' => ENTITY_QUOTE,
+          'sortCol' => '3',
           'columns' => Utils::trans([
             'checkbox',
             'quote_number',
@@ -76,9 +68,9 @@ class QuoteController extends BaseController
         return $this->invoiceService->getDatatable($accountId, $clientPublicId, ENTITY_QUOTE, $search);
     }
 
-    public function create($clientPublicId = 0)
+    public function create(InvoiceRequest $request, $clientPublicId = 0)
     {
-        if (!Utils::isPro()) {
+        if (!Utils::hasFeature(FEATURE_QUOTES)) {
             return Redirect::to('/invoices/create');
         }
 
@@ -99,16 +91,33 @@ class QuoteController extends BaseController
             'title' => trans('texts.new_quote'),
         ];
         $data = array_merge($data, self::getViewModel());
-        
+
         return View::make('invoices.edit', $data);
     }
 
     private static function getViewModel()
     {
+        // Tax rate $options
+        $account = Auth::user()->account;
+        $rates = TaxRate::scope()->orderBy('name')->get();
+        $options = [];
+        $defaultTax = false;
+
+        foreach ($rates as $rate) {
+            $options[$rate->rate . ' ' . $rate->name] = $rate->name . ' ' . ($rate->rate+0) . '%';
+
+            // load default invoice tax
+            if ($rate->id == $account->default_tax_rate_id) {
+                $defaultTax = $rate;
+            }
+        }
+
         return [
           'entityType' => ENTITY_QUOTE,
           'account' => Auth::user()->account,
-          'products' => Product::scope()->orderBy('id')->get(array('product_key', 'notes', 'cost', 'qty')),
+          'products' => Product::scope()->orderBy('id')->get(['product_key', 'notes', 'cost', 'qty']),
+          'taxRateOptions' => $options,
+          'defaultTax' => $defaultTax,
           'countries' => Cache::get('countries'),
           'clients' => Client::scope()->with('contacts', 'country')->orderBy('name')->get(),
           'taxRates' => TaxRate::scope()->orderBy('name')->get(),
@@ -136,19 +145,19 @@ class QuoteController extends BaseController
             Session::flash('message', trans('texts.converted_to_invoice'));
             return Redirect::to('invoices/'.$clone->public_id);
         }
-        
+
         $count = $this->invoiceService->bulk($ids, $action);
 
         if ($count > 0) {
-            $key = $action == 'markSent' ? "updated_quote" : "{$action}d_quote";
+            $key = $action == 'markSent' ? 'updated_quote' : "{$action}d_quote";
             $message = Utils::pluralize($key, $count);
             Session::flash('message', $message);
         }
 
         if ($action == 'restore' && $count == 1) {
-            return Redirect::to("quotes/".Utils::getFirst($ids));
+            return Redirect::to('quotes/'.Utils::getFirst($ids));
         } else {
-            return Redirect::to("quotes");
+            return Redirect::to('quotes');
         }
     }
 

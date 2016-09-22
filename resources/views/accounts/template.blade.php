@@ -14,7 +14,7 @@
                                 Former::input('num_days_' . $field)
                                     ->addClass('enable-' . $field)
                                     ->style('float:left;width:20%')
-                                    ->raw() . 
+                                    ->raw() .
                                 Former::select('direction_' . $field)
                                     ->addOption(trans('texts.days_before'), REMINDER_DIRECTION_BEFORE)
                                     ->addOption(trans('texts.days_after'), REMINDER_DIRECTION_AFTER)
@@ -62,10 +62,13 @@
                 <div id="{{ $field }}_template_preview"></div>
             </div>
         </div>
+        <p>&nbsp;<p/>
         <div class="row">
-            <div class="col-md-12">
-                <p>&nbsp;<p/>
+            <div class="col-md-10 show-when-ready" style="display:none">
                 @include('partials/quill_toolbar', ['name' => $field])
+            </div>
+            <div class="col-md-2 pull-right" style="padding-top:10px">
+                {!! Button::primary(trans('texts.preview'))->withAttributes(['onclick' => 'serverPreview("'.$field.'")'])->small() !!}
             </div>
         </div>
     </div>

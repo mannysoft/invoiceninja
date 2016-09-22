@@ -1,10 +1,13 @@
 <?php namespace App\Http\Controllers;
 
-use Illuminate\Foundation\Bus\DispatchesCommands;
+use Illuminate\Foundation\Bus\DispatchesJobs;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class BaseController extends Controller
 {
-    use DispatchesCommands;
+    use DispatchesJobs, AuthorizesRequests;
+
+    protected $entityType;
 
     /**
      * Setup the layout used by the controller.
@@ -16,10 +19,5 @@ class BaseController extends Controller
         if (! is_null($this->layout)) {
             $this->layout = View::make($this->layout);
         }
-    }
-
-    public function __construct()
-    {
-        $this->beforeFilter('csrf', array('on' => array('post', 'delete', 'put')));
     }
 }

@@ -2,7 +2,6 @@
 
 use Auth;
 use Cache;
-use DB;
 use App;
 use Schema;
 use Session;
@@ -15,11 +14,15 @@ use Log;
 use DateTime;
 use stdClass;
 use Carbon;
-
-use App\Models\Currency;
+use WePay;
 
 class Utils
 {
+    private static $weekdayNames = [
+        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    ];
+
+
     public static function isRegistered()
     {
         return Auth::check() && Auth::user()->registered;
@@ -51,6 +54,11 @@ class Utils
         return php_sapi_name() == 'cli';
     }
 
+    public static function isTravis()
+    {
+        return env('TRAVIS') == 'true';
+    }
+
     public static function isNinja()
     {
         return self::isNinjaProd() || self::isNinjaDev();
@@ -72,7 +80,7 @@ class Utils
 
     public static function requireHTTPS()
     {
-        if (Request::root() === 'http://ninja.dev:8000') {
+        if (Request::root() === 'http://ninja.dev' || Request::root() === 'http://ninja.dev:8000') {
             return false;
         }
 
@@ -118,6 +126,26 @@ class Utils
         return Auth::check() && Auth::user()->isPro();
     }
 
+    public static function hasFeature($feature)
+    {
+        return Auth::check() && Auth::user()->hasFeature($feature);
+    }
+
+    public static function isAdmin()
+    {
+        return Auth::check() && Auth::user()->is_admin;
+    }
+
+    public static function hasPermission($permission, $requireAll = false)
+    {
+        return Auth::check() && Auth::user()->hasPermission($permission, $requireAll);
+    }
+
+    public static function hasAllPermissions($permission)
+    {
+        return Auth::check() && Auth::user()->hasPermission($permission);
+    }
+
     public static function isTrial()
     {
         return Auth::check() && Auth::user()->isTrial();
@@ -126,6 +154,13 @@ class Utils
     public static function isEnglish()
     {
         return App::getLocale() == 'en';
+    }
+
+    public static function getLocaleRegion()
+    {
+        $parts = explode('_', App::getLocale());
+
+        return count($parts) ? $parts[0] : 'en';
     }
 
     public static function getUserType()
@@ -151,22 +186,9 @@ class Utils
         $response = new stdClass();
         $response->message = isset($_ENV["{$userType}_MESSAGE"]) ? $_ENV["{$userType}_MESSAGE"] : '';
         $response->id = isset($_ENV["{$userType}_ID"]) ? $_ENV["{$userType}_ID"] : '';
-        $response->version = NINJA_VERSION;
+        $response->version = env('NINJA_SELF_HOST_VERSION', NINJA_VERSION);
 
         return $response;
-    }
-
-    public static function getLastURL()
-    {
-        if (!count(Session::get(RECENTLY_VIEWED))) {
-            return '#';
-        }
-
-        $history = Session::get(RECENTLY_VIEWED);
-        $last = $history[0];
-        $penultimate = count($history) > 1 ? $history[1] : $last;
-
-        return Request::url() == $last->url ? $penultimate->url : $last->url;
     }
 
     public static function getProLabel($feature)
@@ -180,6 +202,46 @@ class Utils
         }
     }
 
+    public static function getPlanPrice($plan)
+    {
+        $term = $plan['term'];
+        $numUsers = $plan['num_users'];
+        $plan = $plan['plan'];
+
+        if ($plan == PLAN_FREE) {
+            $price = 0;
+        } elseif ($plan == PLAN_PRO) {
+            $price = PLAN_PRICE_PRO_MONTHLY;
+        } elseif ($plan == PLAN_ENTERPRISE) {
+            if ($numUsers <= 2) {
+                $price = PLAN_PRICE_ENTERPRISE_MONTHLY_2;
+            } elseif ($numUsers <= 5) {
+                $price = PLAN_PRICE_ENTERPRISE_MONTHLY_5;
+            } elseif ($numUsers <= 10) {
+                $price = PLAN_PRICE_ENTERPRISE_MONTHLY_10;
+            } else {
+                static::fatalError('Invalid number of users: ' . $numUsers);
+            }
+        }
+
+        if ($term == PLAN_TERM_YEARLY) {
+            $price = $price * 10;
+        }
+
+        return $price;
+    }
+
+    public static function getMinNumUsers($max)
+    {
+        if ($max <= 2) {
+            return 1;
+        } elseif ($max <= 5) {
+            return 3;
+        } else {
+            return 6;
+        }
+    }
+
     public static function basePath()
     {
         return substr($_SERVER['SCRIPT_NAME'], 0, strrpos($_SERVER['SCRIPT_NAME'], '/') + 1);
@@ -190,7 +252,7 @@ class Utils
         $data = [];
 
         foreach ($input as $field) {
-            if ($field == "checkbox") {
+            if ($field == 'checkbox') {
                 $data[] = $field;
             } elseif ($field) {
                 $data[] = trans("texts.$field");
@@ -205,7 +267,7 @@ class Utils
     public static function fatalError($message = false, $exception = false)
     {
         if (!$message) {
-            $message = "An error occurred, please try again later.";
+            $message = 'An error occurred, please try again later.';
         }
 
         static::logError($message.' '.$exception);
@@ -225,7 +287,7 @@ class Utils
         return  "***{$class}*** [{$code}] : {$exception->getFile()} [Line {$exception->getLine()}] => {$exception->getMessage()}";
     }
 
-    public static function logError($error, $context = 'PHP')
+    public static function logError($error, $context = 'PHP', $info = false)
     {
         if ($error instanceof Exception) {
             $error = self::getErrorString($error);
@@ -249,7 +311,11 @@ class Utils
             'count' => Session::get('error_count', 0),
         ];
 
-        Log::error($error."\n", $data);
+        if ($info) {
+            Log::info($error."\n", $data);
+        } else {
+            Log::error($error."\n", $data);
+        }
 
         /*
         Mail::queue('emails.error', ['message'=>$error.' '.json_encode($data)], function($message)
@@ -275,12 +341,12 @@ class Utils
 
     public static function getFromCache($id, $type) {
         $cache = Cache::get($type);
-        
+
         if ( ! $cache) {
             static::logError("Cache for {$type} is not set");
             return null;
         }
-        
+
         $data = $cache->filter(function($item) use ($id) {
             return $item->id == $id;
         });
@@ -290,9 +356,7 @@ class Utils
 
     public static function formatMoney($value, $currencyId = false, $countryId = false, $showCode = false)
     {
-        if (!$value) {
-            $value = 0;
-        }
+        $value = floatval($value);
 
         if (!$currencyId) {
             $currencyId = Session::get(SESSION_CURRENCY, DEFAULT_CURRENCY);
@@ -305,8 +369,9 @@ class Utils
         $currency = self::getFromCache($currencyId, 'currencies');
         $thousand = $currency->thousand_separator;
         $decimal = $currency->decimal_separator;
+        $precision = $currency->precision;
         $code = $currency->code;
-        $swapSymbol = false;
+        $swapSymbol = $currency->swap_currency_symbol;
 
         if ($countryId && $currencyId == CURRENCY_EURO) {
             $country = self::getFromCache($countryId, 'countries');
@@ -319,7 +384,7 @@ class Utils
             }
         }
 
-        $value = number_format($value, $currency->precision, $decimal, $thousand);
+        $value = number_format($value, $precision, $decimal, $thousand);
         $symbol = $currency->symbol;
 
         if ($showCode || !$symbol) {
@@ -337,6 +402,15 @@ class Utils
         $string = trans("texts.$field", ['count' => $count]);
 
         return $string;
+    }
+
+    public static function pluralizeEntityType($type)
+    {
+        if ($type === ENTITY_EXPENSE_CATEGORY) {
+            return 'expense_categories';
+        } else {
+            return $type . 's';
+        }
     }
 
     public static function maskAccountNumber($value)
@@ -389,7 +463,12 @@ class Utils
 
     public static function toCamelCase($string)
     {
-        return lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $string))));
+        return lcfirst(static::toClassCase($string));
+    }
+
+    public static function toClassCase($string)
+    {
+        return str_replace(' ', '', ucwords(str_replace('_', ' ', $string)));
     }
 
     public static function timestampToDateTimeString($timestamp)
@@ -414,7 +493,12 @@ class Utils
             return false;
         }
 
-        $dateTime = new DateTime($date);
+        if ($date instanceof DateTime) {
+            $dateTime = $date;
+        } else {
+            $dateTime = new DateTime($date);
+        }
+
         $timestamp = $dateTime->getTimestamp();
         $format = Session::get(SESSION_DATE_FORMAT, DEFAULT_DATE_FORMAT);
 
@@ -486,7 +570,7 @@ class Utils
     {
         // http://stackoverflow.com/a/3172665
         $f = ':';
-        return sprintf("%02d%s%02d%s%02d", floor($t/3600), $f, ($t/60)%60, $f, $t%60);
+        return sprintf('%02d%s%02d%s%02d', floor($t/3600), $f, ($t/60)%60, $f, $t%60);
     }
 
     public static function today($formatResult = true)
@@ -501,51 +585,6 @@ class Utils
         } else {
             return $date;
         }
-    }
-
-    public static function trackViewed($name, $type, $url = false)
-    {
-        if (!$url) {
-            $url = Request::url();
-        }
-
-        $viewed = Session::get(RECENTLY_VIEWED);
-
-        if (!$viewed) {
-            $viewed = [];
-        }
-
-        $object = new stdClass();
-        $object->accountId = Auth::user()->account_id;
-        $object->url = $url;
-        $object->name = ucwords($type).': '.$name;
-
-        $data = [];
-        $counts = [];
-
-        for ($i = 0; $i<count($viewed); $i++) {
-            $item = $viewed[$i];
-
-            if ($object->url == $item->url || $object->name == $item->name) {
-                continue;
-            }
-
-            array_push($data, $item);
-
-            if (isset($counts[$item->accountId])) {
-                $counts[$item->accountId]++;
-            } else {
-                $counts[$item->accountId] = 1;
-            }
-        }
-
-        array_unshift($data, $object);
-
-        if (isset($counts[Auth::user()->account_id]) && $counts[Auth::user()->account_id] > RECENTLY_VIEWED_LIMIT) {
-            array_pop($data);
-        }
-
-        Session::put(RECENTLY_VIEWED, $data);
     }
 
     public static function processVariables($str)
@@ -598,8 +637,8 @@ class Utils
 
     private static function getMonth($offset)
     {
-        $months = [ "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December", ];
+        $months = ['january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december', ];
 
         $month = intval(date('n')) - 1;
 
@@ -610,7 +649,7 @@ class Utils
             $month += 12;
         }
 
-        return $months[$month];
+        return trans('texts.' . $months[$month]);
     }
 
     private static function getQuarter($offset)
@@ -633,9 +672,14 @@ class Utils
         return $year + $offset;
     }
 
+    public static function getEntityClass($entityType)
+    {
+        return 'App\\Models\\' . static::getEntityName($entityType);
+    }
+
     public static function getEntityName($entityType)
     {
-        return ucwords(str_replace('_', ' ', $entityType));
+        return ucwords(Utils::toCamelCase($entityType));
     }
 
     public static function getClientDisplayName($model)
@@ -747,12 +791,12 @@ class Utils
 
     public static function startsWith($haystack, $needle)
     {
-        return $needle === "" || strpos($haystack, $needle) === 0;
+        return $needle === '' || strpos($haystack, $needle) === 0;
     }
 
     public static function endsWith($haystack, $needle)
     {
-        return $needle === "" || substr($haystack, -strlen($needle)) === $needle;
+        return $needle === '' || substr($haystack, -strlen($needle)) === $needle;
     }
 
     public static function getEntityRowClass($model)
@@ -774,9 +818,11 @@ class Utils
         return $str;
     }
 
-    public static function exportData($output, $data)
+    public static function exportData($output, $data, $headers = false)
     {
-        if (count($data) > 0) {
+        if ($headers) {
+            fputcsv($output, $headers);
+        } elseif (count($data) > 0) {
             fputcsv($output, array_keys($data[0]));
         }
 
@@ -797,6 +843,7 @@ class Utils
     }
 
     // nouns in German and French should be uppercase
+    // TODO remove this
     public static function transFlowText($key)
     {
         $str = trans("texts.$key");
@@ -854,7 +901,7 @@ class Utils
         $name = trim($name);
         $lastName = (strpos($name, ' ') === false) ? '' : preg_replace('#.*\s([\w-]*)$#', '$1', $name);
         $firstName = trim(preg_replace('#'.$lastName.'#', '', $name));
-        return array($firstName, $lastName);
+        return [$firstName, $lastName];
     }
 
     public static function decodePDF($string)
@@ -897,7 +944,7 @@ class Utils
             $link = $prefix.$link;
         }
 
-        return link_to($link, $title, array('target' => '_blank'));
+        return link_to($link, $title, ['target' => '_blank']);
     }
 
     public static function wrapAdjustment($adjustment, $currencyId, $countryId)
@@ -933,44 +980,53 @@ class Utils
         return $entity1;
     }
 
-    public static function withinPastYear($date)
-    {
-        if (!$date || $date == '0000-00-00') {
-            return false;
-        }
-
-        $today = new DateTime('now');
-        $datePaid = DateTime::createFromFormat('Y-m-d', $date);
-        $interval = $today->diff($datePaid);
-
-        return $interval->y == 0;
-    }
-
-    public static function getInterval($date)
-    {
-        if (!$date || $date == '0000-00-00') {
-            return false;
-        }
-
-        $today = new DateTime('now');
-        $datePaid = DateTime::createFromFormat('Y-m-d', $date);
-
-        return $today->diff($datePaid);
-    }
-
-    public static function withinPastTwoWeeks($date)
-    {
-        $interval = Utils::getInterval($date);
-
-        return $interval && $interval->d <= 14;
-    }
-
     public static function addHttp($url)
     {
-        if (!preg_match("~^(?:f|ht)tps?://~i", $url)) {
-            $url = "http://" . $url;
+        if (!preg_match('~^(?:f|ht)tps?://~i', $url)) {
+            $url = 'http://' . $url;
         }
 
         return $url;
+    }
+
+    public static function setupWePay($accountGateway = null)
+    {
+        if (WePay::getEnvironment() == 'none') {
+            if (WEPAY_ENVIRONMENT == WEPAY_STAGE) {
+                WePay::useStaging(WEPAY_CLIENT_ID, WEPAY_CLIENT_SECRET);
+            } else {
+                WePay::useProduction(WEPAY_CLIENT_ID, WEPAY_CLIENT_SECRET);
+            }
+        }
+
+        if ($accountGateway) {
+            return new WePay($accountGateway->getConfig()->accessToken);
+        } else {
+            return new WePay(null);
+        }
+    }
+
+    /**
+     * Gets an array of weekday names (in English)
+     *
+     * @see getTranslatedWeekdayNames()
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public static function getWeekdayNames()
+    {
+        return collect(static::$weekdayNames);
+    }
+
+    /**
+     * Gets an array of translated weekday names
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public static function getTranslatedWeekdayNames()
+    {
+        return collect(static::$weekdayNames)->transform(function ($day) {
+             return trans('texts.'.strtolower($day));
+        });
     }
 }

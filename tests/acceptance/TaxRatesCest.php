@@ -29,6 +29,9 @@ class TaxRatesCest
         $total = $itemCost;
         $total += round($itemCost * $itemTaxRate / 100, 2);
         $total += round($itemCost * $invoiceTaxRate / 100, 2);
+        
+        $itemTaxRate = number_format($itemTaxRate, 3);
+        $invoiceTaxRate = number_format($invoiceTaxRate, 3);
 
         // create tax rates
         $I->amOnPage('/tax_rates/create');
@@ -68,19 +71,21 @@ class TaxRatesCest
         $I->amOnPage('/invoices/create');
         $I->selectDropdown($I, $clientEmail, '.client_select .dropdown-toggle');
         $I->fillField('table.invoice-table tbody tr:nth-child(1) #product_key', $productKey);
-        $I->selectOption('#taxRateSelect', $invoiceTaxName . ' ' . $invoiceTaxRate . '%');
-        $I->wait(2);
+        $I->click('table.invoice-table tbody tr:nth-child(1) .tt-selectable');
+        $I->selectOption('#taxRateSelect1', $invoiceTaxName . ' ' . floatval($invoiceTaxRate) . '%');
+        $I->wait(3);
 
         // check total is right before saving
         $I->see("\${$total}");
         $I->click('Save');
-        $I->wait(1);
+        $I->wait(3);
         $I->see($clientEmail);
 
         // check total is right after saving
         $I->see("\${$total}");
         $I->amOnPage('/invoices');
-
+        $I->wait(2);
+        
         // check total is right in list view
         $I->see("\${$total}");
    }

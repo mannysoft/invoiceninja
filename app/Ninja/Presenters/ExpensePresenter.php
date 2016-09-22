@@ -1,23 +1,35 @@
 <?php namespace App\Ninja\Presenters;
 
 use Utils;
-use Laracasts\Presenter\Presenter;
 
-class ExpensePresenter extends Presenter {
+/**
+ * Class ExpensePresenter
+ */
+class ExpensePresenter extends EntityPresenter
+{
 
-    // Expenses
+    /**
+     * @return string
+     */
     public function vendor()
     {
         return $this->entity->vendor ? $this->entity->vendor->getDisplayName() : '';
     }
 
+    /**
+     * @return \DateTime|string
+     */
     public function expense_date()
     {
         return Utils::fromSqlDate($this->entity->expense_date);
     }
 
-    public function converted_amount()
+    /**
+     * @return int
+     */
+    public function invoiced_amount()
     {
-        return round($this->entity->amount * $this->entity->exchange_rate, 2);
+        return $this->entity->invoice_id ? $this->entity->convertedAmount() : 0;
     }
+    
 }

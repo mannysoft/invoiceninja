@@ -1,89 +1,99 @@
-<?php namespace app\Listeners;
+<?php namespace App\Listeners;
 
-use Auth;
 use Utils;
-
+use App\Models\EntityModel;
 use App\Events\ClientWasCreated;
 use App\Events\QuoteWasCreated;
 use App\Events\InvoiceWasCreated;
 use App\Events\CreditWasCreated;
 use App\Events\PaymentWasCreated;
-
 use App\Events\VendorWasCreated;
 use App\Events\ExpenseWasCreated;
-
 use App\Ninja\Transformers\InvoiceTransformer;
 use App\Ninja\Transformers\ClientTransformer;
 use App\Ninja\Transformers\PaymentTransformer;
-
 use League\Fractal\Manager;
 use League\Fractal\Resource\Item;
 use App\Ninja\Serializers\ArraySerializer;
 
+/**
+ * Class SubscriptionListener
+ */
 class SubscriptionListener
 {
+    /**
+     * @param ClientWasCreated $event
+     */
     public function createdClient(ClientWasCreated $event)
     {
-        if ( ! Auth::check()) {
-            return;
-        }
-
-        $transformer = new ClientTransformer(Auth::user()->account);
-        $this->checkSubscriptions(ACTIVITY_TYPE_CREATE_CLIENT, $event->client, $transformer);
+        $transformer = new ClientTransformer($event->client->account);
+        $this->checkSubscriptions(EVENT_CREATE_CLIENT, $event->client, $transformer);
     }
 
+    /**
+     * @param QuoteWasCreated $event
+     */
     public function createdQuote(QuoteWasCreated $event)
     {
-        if ( ! Auth::check()) {
-            return;
-        }
-
-        $transformer = new InvoiceTransformer(Auth::user()->account);
-        $this->checkSubscriptions(ACTIVITY_TYPE_CREATE_QUOTE, $event->quote, $transformer, ENTITY_CLIENT);
+        $transformer = new InvoiceTransformer($event->quote->account);
+        $this->checkSubscriptions(EVENT_CREATE_QUOTE, $event->quote, $transformer, ENTITY_CLIENT);
     }
 
+    /**
+     * @param PaymentWasCreated $event
+     */
     public function createdPayment(PaymentWasCreated $event)
     {
-        if ( ! Auth::check()) {
-            return;
-        }
-
-        $transformer = new PaymentTransformer(Auth::user()->account);
-        $this->checkSubscriptions(ACTIVITY_TYPE_CREATE_PAYMENT, $event->payment, $transformer, [ENTITY_CLIENT, ENTITY_INVOICE]);
+        $transformer = new PaymentTransformer($event->payment->account);
+        $this->checkSubscriptions(EVENT_CREATE_PAYMENT, $event->payment, $transformer, [ENTITY_CLIENT, ENTITY_INVOICE]);
     }
 
-    public function createdCredit(CreditWasCreated $event)
-    {
-        if ( ! Auth::check()) {
-            return;
-        }
-
-        //$this->checkSubscriptions(ACTIVITY_TYPE_CREATE_CREDIT, $event->credit);
-    }
-
+    /**
+     * @param InvoiceWasCreated $event
+     */
     public function createdInvoice(InvoiceWasCreated $event)
     {
-        if ( ! Auth::check()) {
+        $transformer = new InvoiceTransformer($event->invoice->account);
+        $this->checkSubscriptions(EVENT_CREATE_INVOICE, $event->invoice, $transformer, ENTITY_CLIENT);
+    }
+
+    /**
+     * @param CreditWasCreated $event
+     */
+    public function createdCredit(CreditWasCreated $event)
+    {
+
+    }
+
+    /**
+     * @param VendorWasCreated $event
+     */
+    public function createdVendor(VendorWasCreated $event)
+    {
+
+    }
+
+    /**
+     * @param ExpenseWasCreated $event
+     */
+    public function createdExpense(ExpenseWasCreated $event)
+    {
+
+    }
+
+    /**
+     * @param $eventId
+     * @param $entity
+     * @param $transformer
+     * @param string $include
+     */
+    private function checkSubscriptions($eventId, $entity, $transformer, $include = '')
+    {
+        if ( ! EntityModel::$notifySubscriptions) {
             return;
         }
 
-        $transformer = new InvoiceTransformer(Auth::user()->account);
-        $this->checkSubscriptions(ACTIVITY_TYPE_CREATE_INVOICE, $event->invoice, $transformer, ENTITY_CLIENT);
-    }
-
-    public function createdVendor(VendorWasCreated $event)
-    {
-        //$this->checkSubscriptions(ACTIVITY_TYPE_CREATE_VENDOR, $event->vendor);
-    }
-
-    public function createdExpense(ExpenseWasCreated $event)
-    {
-        //$this->checkSubscriptions(ACTIVITY_TYPE_CREATE_EXPENSE, $event->expense);
-    }
-
-    private function checkSubscriptions($activityTypeId, $entity, $transformer, $include = '')
-    {
-        $subscription = $entity->account->getSubscription($activityTypeId);
+        $subscription = $entity->account->getSubscription($eventId);
 
         if ($subscription) {
             $manager = new Manager();
@@ -92,6 +102,11 @@ class SubscriptionListener
 
             $resource = new Item($entity, $transformer, $entity->getEntityType());
             $data = $manager->createData($resource)->toArray();
+
+            // For legacy Zapier support
+            if (isset($data['client_id'])) {
+                $data['client_name'] = $entity->client->getDisplayName();
+            }
 
             Utils::notifyZapier($subscription, $data);
         }

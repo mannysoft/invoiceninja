@@ -27,7 +27,7 @@
 
     // Whether checkboxes should always be present in the POST data,
     // no matter if you checked them or not
-    'push_checkboxes'         => false,
+    'push_checkboxes'         => true,
 
     // The value a checkbox will have in the POST array if unchecked
     'unchecked_value'         => 0,
@@ -49,7 +49,7 @@
 
     // Whether text that comes out of the translated
     // should be capitalized (ex: email => Email) automatically
-    'capitalize_translations' => true,
+    'capitalize_translations' => false,
 
     // An array of attributes to automatically translate
     'translatable'            => array(

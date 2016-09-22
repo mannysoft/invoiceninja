@@ -5,6 +5,7 @@
     for (var i=0; i<currencies.length; i++) {
         var currency = currencies[i];
         currencyMap[currency.id] = currency;
+        currencyMap[currency.code] = currency;
     }
 
     var countries = {!! \Cache::get('countries') !!};
@@ -28,7 +29,7 @@
     NINJA.parseFloat = function(str) {
         if (!str) return '';
         str = (str+'').replace(/[^0-9\.\-]/g, '');
-        
+
         return window.parseFloat(str);
     }
 
@@ -66,10 +67,11 @@
         }
 
         var currency = currencyMap[currencyId];
+        var precision = currency.precision;
         var thousand = currency.thousand_separator;
         var decimal = currency.decimal_separator;
         var code = currency.code;
-        var swapSymbol = false;
+        var swapSymbol = currency.swap_currency_symbol;
 
         if (countryId && currencyId == {{ CURRENCY_EURO }}) {
             var country = countryMap[countryId];
@@ -82,7 +84,7 @@
             }
         }
 
-        value = accounting.formatMoney(value, '', 2, thousand, decimal);
+        value = accounting.formatMoney(value, '', precision, thousand, decimal);
         var symbol = currency.symbol;
 
         if (hideSymbol) {
